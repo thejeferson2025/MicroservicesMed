@@ -1,0 +1,13 @@
+# --- .NET ---
+.vs/
+[Bb]in/
+[Oo]bj/
+*.user
+*.suo
+*.shellmnt
+*.visid
+*.pdb
+
+# --- Otros  ---
+.DS_Store
+Thumbs.db
