@@ -11,7 +11,7 @@ builder.Services.AddDbContext<WorkItemsDbContext>(options =>
 // HttpClient comunicación con UserManagementService
 builder.Services.AddHttpClient("UserClient", client =>
 {
-    client.BaseAddress = new Uri("http://localhost:5231/api/Users");
+    client.BaseAddress = new Uri("http://localhost:5231/"); // URL del UserManagementService
 });
 
 // Inyección del Servicio

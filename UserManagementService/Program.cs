@@ -1,6 +1,7 @@
 using UserManagementService.Data;
 using Microsoft.EntityFrameworkCore;
 using UserManagementService.Services;
+using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -11,7 +12,10 @@ builder.Services.AddDbContext<UserDbContext>(options =>
 // Inyección del Servicio
 builder.Services.AddScoped<IUserService, UserService>();
 
-builder.Services.AddControllers();
+
+// evitar errores de ciclos en los modelos relacionados
+builder.Services.AddControllers()
+    .AddJsonOptions(x => x.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles);
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 

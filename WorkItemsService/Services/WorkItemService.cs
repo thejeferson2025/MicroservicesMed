@@ -1,3 +1,4 @@
+using System.Net.Http.Json; 
 using System.Text.Json;
 using WorkItemsService.Data;
 using WorkItemsService.Dtos;
@@ -32,78 +33,52 @@ namespace WorkItemsService.Services
 
         public async Task<WorkItem> CreateAndAssignAsync(WorkItemCreateDto dto)
         {
-            // Obtener lista de usuarios de UserManagementService
-            var client = _httpClientFactory.CreateClient("UserClient");
-            var usersResponse = await client.GetAsync(""); 
-            
-            if (!usersResponse.IsSuccessStatusCode)
-                throw new Exception("No se pudo conectar con el servicio de Usuarios.");
-
-            var content = await usersResponse.Content.ReadAsStringAsync();
-            var allUsers = JsonSerializer.Deserialize<List<UserDto>>(content, _jsonOptions);
-
-            if (allUsers == null || !allUsers.Any())
-                throw new Exception("No hay usuarios disponibles para asignar.");
-
-            // Obtener estadísticas actuales de usuarios
-            var currentTasks = await _context.WorkItems
-                                             .Where(w => !w.IsCompleted && w.UserId != null)
-                                             .ToListAsync();
-
-            // Aplicar Algoritmo de Asignación
-            Guid selectedUserId;
-            
-            // verificar si la fecha está próxima a vencer
-            bool isPanicMode = (dto.DueDate - DateTime.Now).TotalDays < 3;
-
-            if (isPanicMode)
-            {
-                //  Asignar al usuario con menos ítems
-                selectedUserId = allUsers
-                    .OrderBy(u => currentTasks.Count(t => t.UserId == u.Id))
-                    .First().Id;
-            }
-            else
-            {
-                //  Filtrar saturados y asignar al de menor carga
-                var availableUsers = allUsers.Where(u => 
-                {
-                    int highRelevanceCount = currentTasks.Count(t => t.UserId == u.Id && t.Relevance == "High");
-                    return highRelevanceCount <= 3; 
-                }).ToList();
-
-                if (!availableUsers.Any())
-                {
-                    // validación y asignación al que menos tenga en general
-                    selectedUserId = allUsers
-                        .OrderBy(u => currentTasks.Count(t => t.UserId == u.Id))
-                        .First().Id;
-                }
-                else
-                {
-                    // elegir al que menos pendientes tenga en total
-                    selectedUserId = availableUsers
-                        .OrderBy(u => currentTasks.Count(t => t.UserId == u.Id))
-                        .First().Id;
-                }
-            }
-
-            // Guarda la nueva tarea
-            var workItem = new WorkItem
+            // Preparamos el item temporalmente
+            var tempItem = new WorkItem
             {
                 Id = Guid.NewGuid(),
                 Title = dto.Title,
                 Description = dto.Description,
                 Relevance = dto.Relevance,
                 DueDate = dto.DueDate,
-                IsCompleted = false,
-                UserId = selectedUserId
+                IsCompleted = false
             };
 
-            _context.WorkItems.Add(workItem);
+            //  Conectamos con UserManagementService
+            // En lugar de traer TODOS los usuarios, enviamos el item y dejamos que ELLOS decidan (Lógica Centralizada)
+            var client = _httpClientFactory.CreateClient("UserClient");
+            
+            // Llamamos al endpoint "Assign"
+            var response = await client.PostAsJsonAsync("api/Users/assign", tempItem);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var errorMsg = await response.Content.ReadAsStringAsync();
+                throw new Exception($"Error al asignar usuario: {errorMsg}");
+            }
+
+            // Leemos la respuesta para obtener a quién se le asignó
+            var responseData = await response.Content.ReadFromJsonAsync<JsonElement>();
+            
+            if (responseData.TryGetProperty("assignedUser", out JsonElement assignedUserElement))
+            {
+                if (assignedUserElement.TryGetProperty("id", out JsonElement idElement))
+                {
+                    // Asignamos el ID que decidió el otro microservicio
+                    tempItem.UserId = Guid.Parse(idElement.GetString()!);
+                }
+            }
+            else
+            {
+                // Fallback por si la respuesta no trae el usuario
+                throw new Exception("El servicio de usuarios no devolvió una asignación válida.");
+            }
+
+            // 4. Guardamos en nuestra base de datos local de WorkItems
+            _context.WorkItems.Add(tempItem);
             await _context.SaveChangesAsync();
 
-            return workItem;
+            return tempItem;
         }
     }
 }

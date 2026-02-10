@@ -27,5 +27,26 @@ namespace UserManagementService.Controllers
             var createdUser = await _service.CreateAsync(user);
             return Ok(createdUser);
         }
+
+        // --- NUEVO ENDPOINT  ---
+        [HttpPost("assign")]
+        public async Task<ActionResult<User>> AssignWorkItem([FromBody] WorkItem workItem)
+        {
+            if (workItem == null) return BadRequest("WorkItem cannot be null");
+
+            var assignedUser = await _service.AssignWorkItemAsync(workItem);
+
+            if (assignedUser == null)
+            {
+                return StatusCode(500, "No user available to assign the task.");
+            }
+
+            return Ok(new 
+            { 
+                Message = $"Task assigned to {assignedUser.Name}", 
+                UserLoad = assignedUser.WorkItems.Count,
+                AssignedUser = assignedUser
+            });
+        }
     }
 }

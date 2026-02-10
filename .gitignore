@@ -1,13 +1,21 @@
-# --- .NET ---
-.vs/
+# --- Build & Output ---
 [Bb]in/
 [Oo]bj/
+.vs/
+.vscode/
+.idea/
+
+# --- User Specific & OS ---
 *.user
 *.suo
-*.shellmnt
-*.visid
-*.pdb
-
-# --- Otros  ---
+*.userosscache
+*.sln.docstates
 .DS_Store
 Thumbs.db
+
+# --- Logs & Test ---
+*.log
+TestResults/
+
+# --- Crashes ---
+*.dump

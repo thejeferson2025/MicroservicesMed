@@ -1,44 +1,57 @@
 # Sistema de Gestión de Ítems de Trabajo (Microservicios)
 
-Este proyecto implementa una arquitectura de microservicios utilizando **.NET 10** y **SQL Server**. El objetivo principal es la distribución inteligente de tareas basada en algoritmos que consideran fechas de vencimiento, relevancia y saturación de los usuarios.
+Este proyecto implementa una solución de backend distribuida utilizando **.NET 10** y **SQL Server**. El sistema ha sido desarrollado para cumplir con principios de **Arquitectura Limpia**, **Inyección de Dependencias** y separación de responsabilidades, garantizando una asignación de tareas eficiente y escalable.
 
-## 🚀 Arquitectura
+## 🚀 Arquitectura y Diseño
 
-El sistema está dividido en dos microservicios independientes que se comunican vía HTTP:
+El sistema sigue un patrón de microservicios con comunicación síncrona HTTP. La lógica de negocio ha sido centralizada en el dominio de usuarios para asegurar la integridad de los datos de carga laboral.
 
-1.  **UserManagementService:** Gestiona la información de los usuarios.
-2.  **WorkItemsService:** Gestiona las tareas y contiene el **Algoritmo de Asignación Inteligente**.
+### Microservicios:
+1.  **UserManagementService (Core):**
+    * Actúa como la "fuente de la verdad" sobre la carga de los usuarios.
+    * Expone el endpoint inteligente `POST /api/users/assign`.
+    * **Lógica Implementada:** Contiene el algoritmo de decisión (Saturación, Prioridad y Urgencia).
+    
+2.  **WorkItemsService (Orquestador):**
+    * Gestiona el ciclo de vida de las tareas.
+    * Actúa como cliente del servicio de usuarios, delegando la decisión de asignación para mantener el desacoplamiento.
+
+### 🧠 Lógica de Negocio (Algoritmo de Asignación)
+El sistema implementa estrictamente las siguientes reglas de negocio:
+
+1.  **Manejo de Urgencias:** Si una tarea vence en **menos de 3 días**, el sistema ignora cualquier otra regla y la asigna al usuario con menor carga absoluta (Modo Pánico).
+2.  **Control de Saturación:** Un usuario se considera "saturado" si tiene **3 o más tareas de Alta Relevancia ('High')**. El algoritmo evita asignar nuevas tareas críticas a usuarios saturados.
+3.  **Balanceo de Carga:** En condiciones normales, las tareas se distribuyen equitativamente buscando siempre al usuario con menos pendientes.
 
 ## 📋 Requisitos Previos
 
-Para ejecutar este proyecto necesitas:
+* [.NET 10 SDK] (Versión compatible con el proyecto)
+* [SQL Server] (Local o Docker)
+* Editor de codigo (Visual Studio Code)
 
-* [.NET 10 SDK]
-* [SQL Server] (Local o Remoto)
-* Un editor de código (Visual Studio o VS Code)
+## ⚙️ Configuración e Instalación
 
-## ⚙️ Configuración de la Base de Datos
+### 1. Base de Datos
+Ejecute el script `script_db.sql` ubicado en la carpeta `DataBase` para generar el esquema relacional (`WorkManagementDB`) y poblar los datos semilla.
 
-### 1. Crear la Base de Datos
-En la raíz del proyecto encontrarás una carpeta `DataBase` con el script `script_db.sql`. Ejecuta este script en tu servidor SQL para crear la base de datos `WorkManagementDB` y las tablas necesarias.
+### 2. Configuración de Entorno
+Configure la cadena de conexión en los archivos `appsettings.json` de **ambos** microservicios:
 
-### 2. Configurar la Cadena de Conexión (Importante)
-Cada microservicio se conecta a la base de datos de manera independiente. Debes configurar tu servidor local en **ambos** proyectos.
-
-1.  Navega a `backend/UserManagementService/appsettings.json`
-2.  Navega a `backend/WorkItemsService/appsettings.json`
-
-En **ambos archivos**, localiza la sección `ConnectionStrings` y modifica los valores de `Server`, `User Id` y `Password` según tu configuración local:
+**Rutas:**
+* `backend/UserManagementService/appsettings.json`
+* `backend/WorkItemsService/appsettings.json`
 
 ```json
 "ConnectionStrings": {
-  "DefaultConnection": "Server=TU_SERVIDOR_SQL; Database=WorkManagementDB; User Id=TU_USUARIO; Password=TU_PASSWORD; TrustServerCertificate=True;"
+  "DefaultConnection": "Server=SU_SERVIDOR; Database=WorkManagementDB; User Id=SU_USUARIO; Password=SU_PASSWORD; TrustServerCertificate=True;"
 }
+
+
 ```
 ## 🛠️ Ejecución del Proyecto
-Para levantar el sistema, debe abrir dos terminales y ejecutar cada microservicio por separado:
-### 1.   Iniciar Microservicio de Usuarios (UserManagementService)
-En la primera terminal, ejecute:
+Para levantar el ecosistema completo, abra dos terminales:
+### TERMINAL 1 : Iniciar Microservicio UserManagementService
+Este servicio debe iniciarse primero o estar disponible para que WorkItems pueda comunicarse, ejecute:
 
 ```json
 cd backend/UserManagementService
@@ -47,7 +60,7 @@ dotnet run
 #### Swagger UI: Una vez iniciado, acceda a la documentación en: http://localhost:5231/swagger/index.html
 ![Swagger UserManagementService](assets/microservice1.png)
 
-### 2. Iniciar Microservicio de Ítems (WorkItemsService)
+### TERMINAL 2 : Iniciar Microservicio WorkItemsService
 En la segunda terminal, ejecute:
 ```json
 cd backend/WorkItemsService
@@ -56,61 +69,48 @@ dotnet run
 #### Swagger UI: Una vez iniciado, acceda a la documentación en: http://localhost:5121/swagger/index.html
 ![Swagger WorkItemsService](assets/microservice2.png)
 
-## ✅ Verificación de Resultados
-### Ve al endpoint POST /api/WorkItems.
+## ✅ Verificación de Resultados (Casos de Uso)
+Puede verificar el cumplimiento de las reglas de negocio utilizando Postman o Swagger en el endpoint:
+#### POST /api/WorkItems
 
-#### Prueba 1: El Balanceo de Carga (Prueba Normal)
-Objetivo: Verificar que si las fechas son lejanas, el sistema reparte las tareas equitativamente entre los usuarios disponibles.  
-Acción: Vamos a crear 3 tareas Normales (Fecha lejana, Relevancia Baja).  
+#### Caso 1: Prueba de Urgencia (Prioridad Máxima)
+**Escenario:** Tarea con fecha de vencimiento próxima (< 3 días). Comportamiento: Debe asignarse al usuario con menos ítems totales, ignorando niveles de senioridad. 
 ```json
 {
-  "title": "Tarea Normal",
-  "description": "Prueba de balanceo",
-  "relevance": "Low",
-  "dueDate": "2026-12-31T23:59:59" 
-}
-```
-Resultado Esperado: Como tienes 3 usuarios  creados por el script incial
-- La 1ra tarea se asigna a cualquiera.
-- La 2da tarea debería ir a otro usuario porque A ya tiene 1.
-- La 3ra tarea debería ir al último usuario.
-
-#### Prueba 2: Modo Pánico (Urgencia < 3 días)
-Objetivo: Verificar que si la fecha es para mañana, el sistema ignora la relevancia y busca desesperadamente al más libre.  
-Acción: Vamos a simular una urgencia. Cambia la fecha para mañana (o pasado mañana). 
-```json
-{
-  "title": "URGENCIA PÁNICO",
-  "description": "Esta tarea vence en 2 días",
-  "relevance": "High", 
-  "dueDate": "2026-02-08T23:59:59"
-}
-```
-Resultado Esperado: El sistema debe asignarlo al usuario con menos carga TOTAL en ese instante.
-
-#### Prueba 3: La Regla de Saturación 
-Objetivo: Llenar a un usuario de tareas "High" y ver si el sistema deja de asignarle tareas nuevas.  
-Acción: Vamos a "saturar" manualmente al sistema. Ejecuta este JSON 4 veces (esto simula que entraron 4 proyectos críticos). Para que caigan en el mismo usuario, el algoritmo debería ir balanceando, pero al final todos tendrán carga alta.
-```json
-{
-  "title": "Proyecto Crítico",
-  "description": "Saturando usuarios",
+  "title": "Corrección Crítica",
+  "description": "Vence mañana, ignorar saturación.",
   "relevance": "High",
-  "dueDate": "2026-10-01T00:00:00"
+  "dueDate": "2026-02-10T23:59:59" 
 }
 ```
+- Nota: Ajuste la fecha dueDate al día de mañana según su fecha actual.
 
+#### Caso 2: Prueba de Saturación
+**Escenario:** Intentar asignar una tarea "High" a un usuario que ya tiene 3 tareas "High".  
+**Comportamiento:** El sistema detectará la saturación y buscará al siguiente usuario disponible, aunque el primero tenga menos carga total.  
 
-Resultado Esperado: Ahora, lanza una tarea Normal con Fecha lejana y con Relevancia Low.
-- El sistema debería mirar quién tiene MÁS de 3 tareas High y saltárselo, asignando la tarea a alguien que no esté saturado.
-
-#### Para comprobar que el algoritmo de distribución está asignando las tareas a los usuarios correctos según la lógica de negocio, ejecute la siguiente consulta en su SQL Server:
 ```json
-SELECT
-    WorkItems.Title AS Tarea,
-    Users.Name AS Asignado_A,
-    WorkItems.UserId AS ID_Usuario
-FROM WorkItems
-JOIN Users ON WorkItems.UserId = Users.Id;
+{
+  "title": "Proyecto Grande",
+  "description": "Prueba de límite de carga",
+  "relevance": "High",
+  "dueDate": "2026-12-01T00:00:00"
+}
 ```
+## 🔍 Consultas de Verificación SQL
+Para auditar las asignaciones realizadas por el algoritmo:
+```json
+{
+ SELECT 
+    w.Title AS Tarea, 
+    w.Relevance AS Prioridad, 
+    w.DueDate AS Vencimiento,
+    u.Name AS Asignado_A
+FROM WorkItems w
+JOIN Users u ON w.UserId = u.Id
+ORDER BY u.Name, w.DueDate;
+}
+```
+- Resultado esperado
+
 ![DataBase Results](assets/result_db.png)
